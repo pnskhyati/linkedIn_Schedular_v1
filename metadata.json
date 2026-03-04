@@ -1,0 +1,8 @@
+{
+  "name": "Copy of LinkUp AI Scheduler",
+  "description": "An intelligent LinkedIn post automation system that generates professional content and high-quality visuals with a human-in-the-loop review workflow.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
