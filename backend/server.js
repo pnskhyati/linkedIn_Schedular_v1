@@ -426,6 +426,10 @@ app.post('/api/ai/insights', async (req, res) => {
     }
 });
 
+app.get('/', (req, res) => {
+    res.send('<h1>LinkUp AI Scheduler Backend</h1><p>Server is running. Access the frontend via Vercel.</p>');
+});
+
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', server: 'LinkUp Backend' });
 });
