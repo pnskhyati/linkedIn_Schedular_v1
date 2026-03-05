@@ -54,13 +54,19 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    checkAuth();
+    const storedUrn = localStorage.getItem('linkup_urn');
+    if (storedUrn) {
+      checkAuth(storedUrn);
+    } else {
+      setStep(WorkflowStep.LOGIN);
+    }
   }, []);
 
   // Handle OAuth Popup Messages
   useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {
       if (event.data?.type === 'LINKEDIN_AUTH_SUCCESS') {
+        localStorage.setItem('linkup_urn', event.data.user.urn);
         setHistoryLoaded(false); // Stop persistence
         checkAuth(event.data.user.urn);
         // Reset working data for the new account
@@ -89,6 +95,7 @@ const App: React.FC = () => {
       const result = await res.json();
 
       if (!result.activeUrn) {
+        localStorage.removeItem('linkup_urn');
         setIsAuthenticated(false);
         setUser(null);
         setAllAccounts([]);

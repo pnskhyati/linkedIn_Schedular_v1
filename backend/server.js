@@ -136,7 +136,7 @@ app.get('/api/auth/status', async (req, res) => {
                 await account.save();
             }
         } else {
-            account = await Account.findOne({ isActive: true }) || await Account.findOne();
+            account = null;
         }
 
         res.json({
