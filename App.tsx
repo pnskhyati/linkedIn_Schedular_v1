@@ -30,10 +30,11 @@ const App: React.FC = () => {
   const [allAccounts, setAllAccounts] = useState<LinkedInUser[]>([]);
 
   // Check Auth Status and Accounts on Load
-  const checkAuth = async (urn?: string) => {
+  const checkAuth = async () => {
     try {
-      const url = urn ? `${API_BASE_URL}/api/auth/status?urn=${urn}` : `${API_BASE_URL}/api/auth/status`;
-      const statusRes = await fetch(url);
+      const statusRes = await fetch(`${API_BASE_URL}/api/auth/status`, {
+        credentials: 'include'
+      });
       const statusData = await statusRes.json();
 
       if (statusData.connected && statusData.user) {
@@ -41,7 +42,9 @@ const App: React.FC = () => {
         setUser(statusData.user);
 
         // Load all connected accounts
-        const accountsRes = await fetch(`${API_BASE_URL}/api/auth/accounts`);
+        const accountsRes = await fetch(`${API_BASE_URL}/api/auth/accounts`, {
+          credentials: 'include'
+        });
         const accountsData = await accountsRes.json();
         setAllAccounts(accountsData.accounts || []);
       } else {
@@ -54,21 +57,15 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const storedUrn = localStorage.getItem('linkup_urn');
-    if (storedUrn) {
-      checkAuth(storedUrn);
-    } else {
-      setStep(WorkflowStep.LOGIN);
-    }
+    checkAuth();
   }, []);
 
   // Handle OAuth Popup Messages
   useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {
       if (event.data?.type === 'LINKEDIN_AUTH_SUCCESS') {
-        localStorage.setItem('linkup_urn', event.data.user.urn);
         setHistoryLoaded(false); // Stop persistence
-        checkAuth(event.data.user.urn);
+        checkAuth();
         // Reset working data for the new account
         setData(prev => ({
           ...prev,
@@ -85,17 +82,16 @@ const App: React.FC = () => {
     return () => window.removeEventListener('message', handleAuthMessage);
   }, []);
 
-  const handleLogout = async (urn?: string) => {
+  const handleLogout = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urn })
+        credentials: 'include'
       });
       const result = await res.json();
 
-      if (!result.activeUrn) {
-        localStorage.removeItem('linkup_urn');
+      if (result.success) {
         setIsAuthenticated(false);
         setUser(null);
         setAllAccounts([]);
@@ -107,38 +103,24 @@ const App: React.FC = () => {
         }));
         setHistoryLoaded(false);
         setStep(WorkflowStep.LOGIN);
-      } else {
-        checkAuth(result.activeUrn);
       }
     } catch (e) {
       console.error("Logout failed", e);
     }
   };
 
-  const handleSwitchAccount = async (urn: string) => {
+  const fetchAiInsights = async (posts: any[]) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/switch`, {
+      const response = await fetch(`${API_BASE_URL}/api/ai/insights`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urn })
+        credentials: 'include',
+        body: JSON.stringify({ posts })
       });
-      const result = await res.json();
-      if (result.success) {
-        setHistoryLoaded(false); // Stop persistence
-        setUser(result.user);
-        // Reset working data for the switched account
-        setData(prev => ({
-          ...prev,
-          sourceType: 'ai-guided',
-          manualEntries: [],
-          aiBrief: '',
-          posts: [],
-          history: [] // Clear old history immediately
-        }));
-        setStep(WorkflowStep.SOURCE_SELECTION);
-      }
+      const result = await response.json();
+      setAiInsights(result);
     } catch (e) {
-      console.error("Switch account failed", e);
+      console.error("Failed to fetch AI insights", e);
     }
   };
 
@@ -170,8 +152,10 @@ const App: React.FC = () => {
       if (!user?.urn) return;
 
       try {
-        // 1. Try to load from Server first for the latest background status
-        const serverRes = await fetch(`${API_BASE_URL}/api/history?urn=${user.urn}`);
+        // 1. Load from Server first for the latest background status
+        const serverRes = await fetch(`${API_BASE_URL}/api/history`, {
+          credentials: 'include'
+        });
         const serverData = await serverRes.json();
 
         let history = serverData.history;
@@ -213,7 +197,8 @@ const App: React.FC = () => {
         await fetch(`${API_BASE_URL}/api/history/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urn: user.urn, history: data.history })
+          credentials: 'include',
+          body: JSON.stringify({ history: data.history })
         });
       } catch (e) {
         console.error("Failed to persist history", e);
@@ -257,7 +242,7 @@ const App: React.FC = () => {
       // We still want to see countdowns etc, but we let the backend handle the actual publishing.
       // However, we should poll the server for the latest status if the user is on the dashboard.
       if (step === WorkflowStep.DASHBOARD && user?.urn) {
-        fetch(`${API_BASE_URL}/api/history?urn=${user.urn}`)
+        fetch(`${API_BASE_URL}/api/history`, { credentials: 'include' })
           .then(res => res.json())
           .then(serverData => {
             if (serverData.history) {
@@ -491,6 +476,7 @@ const App: React.FC = () => {
       const response = await fetch(`${API_BASE_URL}/api/publish/linkedin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           headline: post.headline,
           content: post.content,
@@ -1477,9 +1463,7 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Header
         user={user}
-        accounts={allAccounts}
         onLogout={handleLogout}
-        onSwitchAccount={handleSwitchAccount}
         onLoginAnother={handleLinkedInLogin}
         onViewDashboard={() => setStep(WorkflowStep.DASHBOARD)}
       />

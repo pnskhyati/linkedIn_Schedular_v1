@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const fs = require('fs');
@@ -47,13 +49,32 @@ const PostSchema = new mongoose.Schema({
 const Account = mongoose.model('Account', AccountSchema);
 const Post = mongoose.model('Post', PostSchema);
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(morgan('dev'));
-
 const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
 const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
 const REDIRECT_URI = process.env.LINKEDIN_REDIRECT_URI;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
+
+app.use(cookieParser());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(morgan('dev'));
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Access denied' });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.userUrn = decoded.urn;
+        next();
+    } catch (err) {
+        res.status(403).json({ error: 'Invalid token' });
+    }
+};
 
 // Persistence logic replaced by Mongoose models
 
@@ -109,7 +130,18 @@ app.get('/auth/linkedin/callback', async (req, res) => {
         );
 
         // Deactivate others
-        await Account.updateMany({ urn: { $ne: personUrn } }, { isActive: false });
+        // (REMOVED: This was causing session leakage in multi-user environments)
+
+        // Generate JWT
+        const token = jwt.sign({ urn: personUrn }, JWT_SECRET, { expiresIn: '7d' });
+
+        // Set Cookie
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: true, // Required for sameSite: 'None'
+            sameSite: 'None', // Required for cross-site cookies (Vercel -> Render)
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
 
         res.send(`
             <script>
@@ -123,35 +155,26 @@ app.get('/auth/linkedin/callback', async (req, res) => {
     }
 });
 
-app.get('/api/auth/status', async (req, res) => {
+app.get('/api/auth/status', authenticateToken, async (req, res) => {
     try {
-        const urn = req.query.urn;
-        let account;
-
-        if (urn) {
-            account = await Account.findOne({ urn });
-            if (account) {
-                await Account.updateMany({}, { isActive: false });
-                account.isActive = true;
-                await account.save();
-            }
-        } else {
-            account = null;
-        }
+        const urn = req.userUrn;
+        const account = await Account.findOne({ urn });
 
         res.json({
             connected: !!account,
             user: account ? account.user : null,
-            activeUrn: account ? account.urn : null
+            activeUrn: urn
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-app.get('/api/auth/accounts', async (req, res) => {
+app.get('/api/auth/accounts', authenticateToken, async (req, res) => {
     try {
-        const accounts = await Account.find({});
+        // In a true multi-user system, we might only allow switching within related accounts,
+        // but for now, we'll return all for the authenticated user (though LinkedIn only has one per login)
+        const accounts = await Account.find({ urn: req.userUrn });
         res.json({ accounts: accounts.map(a => a.user) });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -175,36 +198,20 @@ app.post('/api/auth/switch', async (req, res) => {
     }
 });
 
-app.post('/api/auth/logout', async (req, res) => {
-    try {
-        const { urn } = req.body;
-        if (urn) {
-            await Account.deleteOne({ urn });
-        } else {
-            const activeAccount = await Account.findOne({ isActive: true });
-            if (activeAccount) {
-                await Account.deleteOne({ urn: activeAccount.urn });
-            }
-        }
-
-        const nextAccount = await Account.findOne();
-        if (nextAccount) {
-            nextAccount.isActive = true;
-            await nextAccount.save();
-        }
-
-        res.json({ success: true, activeUrn: nextAccount ? nextAccount.urn : null });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None'
+    });
+    res.json({ success: true });
 });
 
 // --- History & Schedule Sync ---
 
-app.get('/api/history', async (req, res) => {
+app.get('/api/history', authenticateToken, async (req, res) => {
     try {
-        const { urn } = req.query;
-        if (!urn) return res.status(400).json({ error: 'URN is required' });
+        const urn = req.userUrn;
         const history = await Post.find({ userUrn: urn }).sort({ scheduledAt: -1 });
         res.json({ history });
     } catch (error) {
@@ -212,14 +219,12 @@ app.get('/api/history', async (req, res) => {
     }
 });
 
-app.post('/api/history/sync', async (req, res) => {
+app.post('/api/history/sync', authenticateToken, async (req, res) => {
     try {
-        const { urn, history } = req.body;
-        if (!urn || !history) return res.status(400).json({ error: 'URN and history are required' });
+        const urn = req.userUrn;
+        const { history } = req.body;
+        if (!history) return res.status(400).json({ error: 'History is required' });
 
-        // For sync, we update items that exist or create ones that don't
-        // But the previous implementation just replaced the whole array in JSON.
-        // For MongoDB, we'll upsert each item for that URN.
         for (const post of history) {
             await Post.findOneAndUpdate(
                 { id: post.id, userUrn: urn },
@@ -334,14 +339,9 @@ async function performPublish(post, targetUrn) {
     return response.data.id;
 }
 
-app.post('/api/publish/linkedin', async (req, res) => {
-    const { headline, content, imageUrl, hashtags, urn } = req.body;
-    let targetUrn = urn;
-
-    if (!targetUrn) {
-        const activeAccount = await Account.findOne({ isActive: true });
-        targetUrn = activeAccount ? activeAccount.urn : null;
-    }
+app.post('/api/publish/linkedin', authenticateToken, async (req, res) => {
+    const { headline, content, imageUrl, hashtags } = req.body;
+    const targetUrn = req.userUrn;
 
     try {
         const postId = await performPublish({ headline, content, imageUrl, hashtags }, targetUrn);

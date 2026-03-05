@@ -4,12 +4,10 @@ import { LinkedInUser, WorkflowStep } from '../types';
 
 export const Header: React.FC<{
   user: LinkedInUser | null;
-  accounts?: LinkedInUser[];
-  onLogout: (urn?: string) => void;
-  onSwitchAccount?: (urn: string) => void;
+  onLogout: () => void;
   onLoginAnother?: () => void;
   onViewDashboard?: () => void;
-}> = ({ user, accounts = [], onLogout, onSwitchAccount, onLoginAnother, onViewDashboard }) => {
+}> = ({ user, onLogout, onLoginAnother, onViewDashboard }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   return (
@@ -71,24 +69,6 @@ export const Header: React.FC<{
                         </div>
                         <div className="ml-auto px-2 py-1 bg-green-100 text-green-700 text-[8px] font-black rounded-full uppercase">Active</div>
                       </div>
-
-                      {accounts.length > 1 && (
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Switch Account</p>
-                          <div className="max-h-40 overflow-y-auto space-y-1">
-                            {accounts.filter(a => a.urn !== user.urn).map(acc => (
-                              <button
-                                key={acc.urn}
-                                onClick={() => { onSwitchAccount?.(acc.urn); setShowDropdown(false); }}
-                                className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white transition-all border border-transparent hover:border-slate-100 group"
-                              >
-                                <img src={acc.picture} alt={acc.name} className="w-8 h-8 rounded-full object-cover grayscale group-hover:grayscale-0 transition-all" />
-                                <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900">{acc.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
 
                     <div className="p-2 space-y-1">
@@ -96,13 +76,13 @@ export const Header: React.FC<{
                         onClick={() => { onLoginAnother?.(); setShowDropdown(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-blue-600 hover:bg-blue-50 rounded-xl transition-colors font-bold"
                       >
-                        <span className="text-base text-blue-400">➕</span> Add Another Account
+                        <span className="text-base text-blue-400">➕</span> Switch / Add Account
                       </button>
                       <button
-                        onClick={() => { onLogout(user.urn); setShowDropdown(false); }}
+                        onClick={() => { onLogout(); setShowDropdown(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 rounded-xl transition-colors font-bold"
                       >
-                        <span className="text-base text-red-400">🚪</span> Logout {user.name.split(' ')[0]}
+                        <span className="text-base text-red-400">🚪</span> Logout
                       </button>
                     </div>
                   </div>
