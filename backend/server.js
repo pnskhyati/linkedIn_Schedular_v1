@@ -72,7 +72,7 @@ app.use(cors({
     credentials: true
 }));
 console.log('CORS Allowed Origins:', allowedOrigins);
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(morgan('dev'));
 
 // Auth Middleware
