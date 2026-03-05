@@ -54,11 +54,24 @@ const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
 const REDIRECT_URI = process.env.LINKEDIN_REDIRECT_URI;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
+const allowedOrigins = [
+    'https://linked-in-schedular-v1.vercel.app',
+    'http://localhost:3000',
+    process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cookieParser());
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
+console.log('CORS Allowed Origins:', allowedOrigins);
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
